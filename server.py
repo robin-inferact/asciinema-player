@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compact asciinema recording viewer. Run: python3 server.py [port]"""
+"""Compact asciinema recording viewer. Run: python3 server.py [directory] [port]"""
 
 import json, os, re, sys, mimetypes
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -7,9 +7,15 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from functools import lru_cache
 
-CINEMA_DIR = Path.home() / "cinema"
+# Parse args: server.py [directory] [port]
+_args = sys.argv[1:]
+CINEMA_DIR = Path(_args.pop(0)).expanduser().resolve() if _args and not _args[0].isdigit() else Path.home() / "cinema"
+PORT = int(_args.pop(0)) if _args and _args[0].isdigit() else 8000
 STATIC_DIR = Path(__file__).parent
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+
+if not CINEMA_DIR.is_dir():
+    print(f"Error: directory not found: {CINEMA_DIR}")
+    sys.exit(1)
 
 ANSI_RE = re.compile(
     r'\x1b\[[0-9;]*[a-zA-Z]'
@@ -316,7 +322,7 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     HTTPServer.allow_reuse_address = True
     server = HTTPServer(('0.0.0.0', PORT), Handler)
-    print(f'Serving at http://localhost:{PORT}')
+    print(f'Serving {CINEMA_DIR} at http://localhost:{PORT}')
     try:
         server.serve_forever()
     except KeyboardInterrupt:
