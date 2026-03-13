@@ -22,9 +22,11 @@ body { font-family: -apple-system, 'SF Mono', 'Cascadia Code', monospace; backgr
 .search-box input:focus { outline: none; border-color: var(--accent); }
 .search-box select { background: var(--bg3); border: 1px solid var(--border); color: var(--fg);
   padding: 4px 6px; border-radius: 4px; font-size: 12px; font-family: inherit; }
-.search-box button { background: var(--accent); color: var(--bg); border: none; padding: 4px 12px;
-  border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 600; }
-.search-box button:hover { opacity: 0.85; }
+.search-box button, .topbar .layout-btn { background: var(--accent); color: var(--bg); border: none;
+  padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 600; }
+.search-box button:hover, .topbar .layout-btn:hover { opacity: 0.85; }
+.topbar .layout-btn { background: var(--bg3); color: var(--fg2); font-weight: 400; }
+.topbar .layout-btn.active { background: var(--accent); color: var(--bg); }
 
 /* Main layout */
 .main { display: flex; flex: 1; overflow: hidden; }
@@ -39,19 +41,34 @@ body { font-family: -apple-system, 'SF Mono', 'Cascadia Code', monospace; backgr
 .sidebar .file .name { color: var(--fg); font-weight: 500; }
 .sidebar .file .meta { color: var(--fg2); font-size: 10px; }
 
-/* Content area */
+/* Content area - bottom layout (default) */
 .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.content.layout-right { flex-direction: row; }
 
 /* Player */
-.player-wrap { flex: 0 0 350px; padding: 8px; background: var(--bg); display: flex;
-  justify-content: center; align-items: center; overflow: hidden; }
-.player-wrap.empty-state { flex: 0 0 80px; }
+.player-wrap { padding: 8px; background: var(--bg); display: flex;
+  justify-content: center; align-items: center; overflow: hidden; position: relative; }
+.content:not(.layout-right) .player-wrap { height: 350px; min-height: 100px; }
+.content:not(.layout-right) .player-wrap.empty-state { height: 80px; }
+.content.layout-right .player-wrap { flex: 1; min-width: 200px; }
 .player-wrap .empty { color: var(--fg2); font-size: 14px; }
 #player-container { width: 100%; height: 100%; }
+
+/* Resize handle */
+.resize-handle { flex-shrink: 0; background: var(--border); position: relative; z-index: 10; }
+.resize-handle:hover, .resize-handle.dragging { background: var(--accent); }
+.content:not(.layout-right) .resize-handle { height: 6px; cursor: ns-resize; width: 100%;
+  margin: -3px 0; padding: 3px 0; background-clip: content-box; }
+.content.layout-right .resize-handle { width: 6px; cursor: ew-resize; height: 100%;
+  margin: 0 -3px; padding: 0 3px; background-clip: content-box; }
+
+/* Bottom panel (transcript + search) */
+.bottom-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 100px; min-width: 250px; }
 
 /* Tabs */
 .tabs { display: flex; background: var(--bg2); border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.content.layout-right .tabs { border-top: none; }
 .tabs button { background: none; border: none; color: var(--fg2); padding: 5px 14px;
   cursor: pointer; font-size: 12px; font-family: inherit; border-bottom: 2px solid transparent; }
 .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -86,6 +103,10 @@ body { font-family: -apple-system, 'SF Mono', 'Cascadia Code', monospace; backgr
 
 /* Player theming overrides */
 .ap-wrapper { border-radius: 6px !important; }
+
+/* Prevent text selection while dragging */
+body.resizing { user-select: none; cursor: ns-resize; }
+body.resizing-h { user-select: none; cursor: ew-resize; }
 </style>
 </head>
 <body>
@@ -98,21 +119,25 @@ body { font-family: -apple-system, 'SF Mono', 'Cascadia Code', monospace; backgr
     </select>
     <button onclick="doSearch()">Search</button>
   </div>
+  <button class="layout-btn" id="layout-btn" onclick="toggleLayout()" title="Toggle transcript position">Side panel</button>
 </div>
 <div class="main">
   <div class="sidebar" id="sidebar"></div>
-  <div class="content">
+  <div class="content" id="content">
     <div class="player-wrap empty-state" id="player-wrap">
       <div id="player-container"><span class="empty">Select a recording</span></div>
     </div>
-    <div class="tabs">
-      <button class="active" onclick="showTab('transcript')">Transcript</button>
-      <button onclick="showTab('search')">Search Results</button>
+    <div class="resize-handle" id="resize-handle"></div>
+    <div class="bottom-panel" id="bottom-panel">
+      <div class="tabs">
+        <button class="active" onclick="showTab('transcript')">Transcript</button>
+        <button onclick="showTab('search')">Search Results</button>
+      </div>
+      <div class="transcript" id="transcript">
+        <div class="loading">Select a recording to view transcript</div>
+      </div>
+      <div class="search-results" id="search-results"></div>
     </div>
-    <div class="transcript" id="transcript">
-      <div class="loading">Select a recording to view transcript</div>
-    </div>
-    <div class="search-results" id="search-results"></div>
   </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3/dist/bundle/asciinema-player.min.js"></script>
@@ -120,6 +145,7 @@ body { font-family: -apple-system, 'SF Mono', 'Cascadia Code', monospace; backgr
 let player = null;
 let currentFile = null;
 let files = [];
+let layoutRight = false;
 
 // Format time as mm:ss
 function fmt(t) {
@@ -158,14 +184,11 @@ async function loadFiles() {
 // Select and play a file
 function selectFile(f) {
   currentFile = f.name;
-  // Update sidebar active state
   document.querySelectorAll('.sidebar .file').forEach(el => {
     el.classList.toggle('active', el.dataset.name === f.name);
   });
-  // Update search scope
   document.getElementById('search-scope').value = f.name;
 
-  // Create player
   document.getElementById('player-wrap').classList.remove('empty-state');
   const container = document.getElementById('player-container');
   if (player) { player.dispose(); player = null; }
@@ -181,7 +204,6 @@ function selectFile(f) {
   };
   player = AsciinemaPlayer.create(`/cast/${f.name}`, container, opts);
 
-  // Load transcript
   loadTranscript(f.name);
   showTab('transcript');
 }
@@ -231,7 +253,6 @@ async function loadTranscript(name) {
     div.innerHTML = html;
     div.onclick = (e) => {
       if (e.target.classList.contains('expand')) {
-        // Expand hidden lines
         let extra = '';
         for (const line of chunk.lines.slice(MAX_LINES)) {
           extra += `<span class="line">${escHtml(line.text)}`;
@@ -253,7 +274,6 @@ function seekTo(time) {
     player.seek(time);
     player.play();
   }
-  // Highlight the chunk
   document.querySelectorAll('.transcript .chunk').forEach(el => {
     el.classList.toggle('highlight', parseFloat(el.dataset.time) === time);
   });
@@ -290,11 +310,9 @@ async function doSearch() {
       `<span class="time">${fmt(r.time)}</span>` +
       `<span class="context">${before}<span class="match">${match}</span>${after}</span>`;
     div.onclick = () => {
-      // Load the file if not current, then seek
       if (currentFile !== r.file) {
         const f = files.find(f => f.name === r.file);
         if (f) selectFile(f);
-        // Wait for player to be ready, then seek
         setTimeout(() => seekTo(r.time), 500);
       } else {
         seekTo(r.time);
@@ -316,7 +334,68 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Enter key triggers search
+// --- Layout toggle ---
+function toggleLayout() {
+  layoutRight = !layoutRight;
+  const content = document.getElementById('content');
+  const btn = document.getElementById('layout-btn');
+  content.classList.toggle('layout-right', layoutRight);
+  btn.textContent = layoutRight ? 'Bottom panel' : 'Side panel';
+  btn.classList.toggle('active', layoutRight);
+  // Reset any inline sizes from dragging
+  document.getElementById('player-wrap').style.height = '';
+  document.getElementById('player-wrap').style.width = '';
+  document.getElementById('bottom-panel').style.height = '';
+  document.getElementById('bottom-panel').style.width = '';
+}
+
+// --- Draggable resize handle ---
+(function() {
+  const handle = document.getElementById('resize-handle');
+  const playerWrap = document.getElementById('player-wrap');
+  let dragging = false;
+  let startPos = 0;
+  let startSize = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.classList.add('dragging');
+    if (layoutRight) {
+      startPos = e.clientX;
+      startSize = playerWrap.offsetWidth;
+      document.body.classList.add('resizing-h');
+    } else {
+      startPos = e.clientY;
+      startSize = playerWrap.offsetHeight;
+      document.body.classList.add('resizing');
+    }
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    e.preventDefault();
+    if (layoutRight) {
+      const delta = e.clientX - startPos;
+      const newWidth = Math.max(200, startSize + delta);
+      playerWrap.style.width = newWidth + 'px';
+      playerWrap.style.flex = 'none';
+    } else {
+      const delta = e.clientY - startPos;
+      const newHeight = Math.max(100, startSize + delta);
+      playerWrap.style.height = newHeight + 'px';
+      playerWrap.style.flex = 'none';
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.classList.remove('resizing', 'resizing-h');
+  });
+})();
+
 document.getElementById('search-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
 });
