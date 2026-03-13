@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cinema Replay</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3/dist/bundle/asciinema-player.css">
+<style>
+:root { --bg: #1a1b26; --bg2: #24283b; --bg3: #2f3347; --fg: #c0caf5; --fg2: #565f89;
+  --accent: #7aa2f7; --accent2: #bb9af7; --border: #3b4261; --green: #9ece6a; --red: #f7768e; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, 'SF Mono', 'Cascadia Code', monospace; background: var(--bg);
+  color: var(--fg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Top bar */
+.topbar { display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.topbar h1 { font-size: 14px; color: var(--accent); white-space: nowrap; }
+.search-box { flex: 1; display: flex; gap: 6px; align-items: center; }
+.search-box input { flex: 1; max-width: 400px; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--fg); padding: 4px 8px; border-radius: 4px; font-size: 13px; font-family: inherit; }
+.search-box input:focus { outline: none; border-color: var(--accent); }
+.search-box select { background: var(--bg3); border: 1px solid var(--border); color: var(--fg);
+  padding: 4px 6px; border-radius: 4px; font-size: 12px; font-family: inherit; }
+.search-box button { background: var(--accent); color: var(--bg); border: none; padding: 4px 12px;
+  border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 600; }
+.search-box button:hover { opacity: 0.85; }
+
+/* Main layout */
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* Sidebar */
+.sidebar { width: 220px; min-width: 220px; background: var(--bg2); border-right: 1px solid var(--border);
+  overflow-y: auto; flex-shrink: 0; }
+.sidebar .file { padding: 6px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 1px; }
+.sidebar .file:hover { background: var(--bg3); }
+.sidebar .file.active { background: var(--bg3); border-left: 3px solid var(--accent); }
+.sidebar .file .name { color: var(--fg); font-weight: 500; }
+.sidebar .file .meta { color: var(--fg2); font-size: 10px; }
+
+/* Content area */
+.content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Player */
+.player-wrap { flex: 0 0 350px; padding: 8px; background: var(--bg); display: flex;
+  justify-content: center; align-items: center; overflow: hidden; }
+.player-wrap.empty-state { flex: 0 0 80px; }
+.player-wrap .empty { color: var(--fg2); font-size: 14px; }
+#player-container { width: 100%; height: 100%; }
+
+/* Tabs */
+.tabs { display: flex; background: var(--bg2); border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.tabs button { background: none; border: none; color: var(--fg2); padding: 5px 14px;
+  cursor: pointer; font-size: 12px; font-family: inherit; border-bottom: 2px solid transparent; }
+.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tabs button:hover { color: var(--fg); }
+
+/* Transcript */
+.transcript { flex: 1; overflow-y: auto; padding: 6px 0; font-size: 12px; }
+.transcript .chunk { padding: 3px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.transcript .chunk:hover { background: var(--bg3); }
+.transcript .chunk .time { color: var(--accent2); font-size: 10px; font-weight: 600;
+  margin-right: 8px; user-select: none; }
+.transcript .chunk .overwrites { color: var(--fg2); font-size: 10px; margin-left: 4px; }
+.transcript .chunk .line { color: var(--fg); white-space: pre-wrap; word-break: break-all; }
+.transcript .chunk .line .collapsed { color: var(--fg2); font-size: 10px; }
+.transcript .chunk.highlight { background: var(--bg3); border-left: 3px solid var(--accent); }
+.transcript .chunk .expand { color: var(--accent); cursor: pointer; font-size: 11px; display: inline-block;
+  padding: 1px 4px; margin-top: 2px; }
+.transcript .chunk .expand:hover { text-decoration: underline; }
+.transcript .loading { color: var(--fg2); padding: 20px; text-align: center; }
+
+/* Search results */
+.search-results { flex: 1; overflow-y: auto; padding: 6px 0; font-size: 12px; display: none; }
+.search-results .result { padding: 4px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
+.search-results .result:hover { background: var(--bg3); }
+.search-results .result .file-name { color: var(--green); font-size: 10px; margin-right: 6px; }
+.search-results .result .time { color: var(--accent2); font-size: 10px; margin-right: 8px; }
+.search-results .result .context { color: var(--fg); }
+.search-results .result .match { background: rgba(122, 162, 247, 0.3); color: var(--accent);
+  border-radius: 2px; padding: 0 1px; }
+.search-results .summary { color: var(--fg2); padding: 8px 12px; font-size: 11px; }
+.search-results .no-results { color: var(--fg2); padding: 20px; text-align: center; }
+
+/* Player theming overrides */
+.ap-wrapper { border-radius: 6px !important; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>Cinema Replay</h1>
+  <div class="search-box">
+    <input type="text" id="search-input" placeholder="Search terminal output..." spellcheck="false">
+    <select id="search-scope">
+      <option value="">All recordings</option>
+    </select>
+    <button onclick="doSearch()">Search</button>
+  </div>
+</div>
+<div class="main">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="content">
+    <div class="player-wrap empty-state" id="player-wrap">
+      <div id="player-container"><span class="empty">Select a recording</span></div>
+    </div>
+    <div class="tabs">
+      <button class="active" onclick="showTab('transcript')">Transcript</button>
+      <button onclick="showTab('search')">Search Results</button>
+    </div>
+    <div class="transcript" id="transcript">
+      <div class="loading">Select a recording to view transcript</div>
+    </div>
+    <div class="search-results" id="search-results"></div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/asciinema-player@3/dist/bundle/asciinema-player.min.js"></script>
+<script>
+let player = null;
+let currentFile = null;
+let files = [];
+
+// Format time as mm:ss
+function fmt(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+// Format file size
+function fmtSize(b) {
+  if (b > 1e6) return (b / 1e6).toFixed(1) + ' MB';
+  return (b / 1e3).toFixed(0) + ' KB';
+}
+
+// Load file list
+async function loadFiles() {
+  const res = await fetch('/api/files');
+  files = await res.json();
+  const sidebar = document.getElementById('sidebar');
+  const scope = document.getElementById('search-scope');
+  sidebar.innerHTML = '';
+  files.forEach(f => {
+    const d = document.createElement('div');
+    d.className = 'file';
+    d.dataset.name = f.name;
+    d.innerHTML = `<span class="name">${f.name}</span>
+      <span class="meta">${f.cols}x${f.rows} &middot; ${fmtSize(f.size)}</span>`;
+    d.onclick = () => selectFile(f);
+    sidebar.appendChild(d);
+    const opt = document.createElement('option');
+    opt.value = f.name;
+    opt.textContent = f.name;
+    scope.appendChild(opt);
+  });
+}
+
+// Select and play a file
+function selectFile(f) {
+  currentFile = f.name;
+  // Update sidebar active state
+  document.querySelectorAll('.sidebar .file').forEach(el => {
+    el.classList.toggle('active', el.dataset.name === f.name);
+  });
+  // Update search scope
+  document.getElementById('search-scope').value = f.name;
+
+  // Create player
+  document.getElementById('player-wrap').classList.remove('empty-state');
+  const container = document.getElementById('player-container');
+  if (player) { player.dispose(); player = null; }
+  container.innerHTML = '';
+
+  const opts = {
+    cols: f.cols,
+    rows: f.rows,
+    fit: 'both',
+    autoPlay: false,
+    terminalFontFamily: "'SF Mono', 'Cascadia Code', 'Fira Code', monospace",
+    terminalFontSize: 'small',
+  };
+  player = AsciinemaPlayer.create(`/cast/${f.name}`, container, opts);
+
+  // Load transcript
+  loadTranscript(f.name);
+  showTab('transcript');
+}
+
+// Load transcript
+async function loadTranscript(name) {
+  const el = document.getElementById('transcript');
+  el.innerHTML = '<div class="loading">Loading transcript...</div>';
+
+  const res = await fetch(`/api/transcript/${name}`);
+  const chunks = await res.json();
+  el.innerHTML = '';
+
+  if (chunks.length === 0) {
+    el.innerHTML = '<div class="loading">No output in this recording</div>';
+    return;
+  }
+
+  const MAX_LINES = 8;
+  const fragment = document.createDocumentFragment();
+  for (const chunk of chunks) {
+    const div = document.createElement('div');
+    div.className = 'chunk';
+    div.dataset.time = chunk.time;
+
+    let html = `<span class="time">${fmt(chunk.time)}</span>`;
+    if (chunk.overwrites > 5) {
+      html += `<span class="overwrites">(${chunk.overwrites} overwrites collapsed)</span>`;
+    }
+    html += '<br>';
+
+    const show = chunk.lines.slice(0, MAX_LINES);
+    const hidden = chunk.lines.length - MAX_LINES;
+    for (const line of show) {
+      html += `<span class="line">${escHtml(line.text)}`;
+      if (line.collapsed) {
+        html += ` <span class="collapsed">(${line.collapsed} similar)</span>`;
+      }
+      html += '</span>\n';
+    }
+    if (hidden > 0) {
+      html += `<span class="expand" data-chunk="${chunk.time}">... ${hidden} more lines</span>`;
+    }
+    if (chunk.hiddenLines) {
+      html += `<span class="collapsed">(${chunk.hiddenLines} additional lines truncated)</span>`;
+    }
+    div.innerHTML = html;
+    div.onclick = (e) => {
+      if (e.target.classList.contains('expand')) {
+        // Expand hidden lines
+        let extra = '';
+        for (const line of chunk.lines.slice(MAX_LINES)) {
+          extra += `<span class="line">${escHtml(line.text)}`;
+          if (line.collapsed) extra += ` <span class="collapsed">(${line.collapsed} similar)</span>`;
+          extra += '</span>\n';
+        }
+        e.target.outerHTML = extra;
+        return;
+      }
+      seekTo(chunk.time);
+    };
+    fragment.appendChild(div);
+  }
+  el.appendChild(fragment);
+}
+
+function seekTo(time) {
+  if (player) {
+    player.seek(time);
+    player.play();
+  }
+  // Highlight the chunk
+  document.querySelectorAll('.transcript .chunk').forEach(el => {
+    el.classList.toggle('highlight', parseFloat(el.dataset.time) === time);
+  });
+}
+
+// Search
+async function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+  const scope = document.getElementById('search-scope').value;
+  const url = `/api/search?q=${encodeURIComponent(q)}` + (scope ? `&file=${encodeURIComponent(scope)}` : '');
+
+  showTab('search');
+  const el = document.getElementById('search-results');
+  el.innerHTML = '<div class="summary">Searching...</div>';
+
+  const res = await fetch(url);
+  const results = await res.json();
+  el.innerHTML = '';
+
+  if (results.length === 0) {
+    el.innerHTML = '<div class="no-results">No results found</div>';
+    return;
+  }
+
+  el.innerHTML = `<div class="summary">${results.length} result${results.length > 1 ? 's' : ''} found</div>`;
+  for (const r of results) {
+    const div = document.createElement('div');
+    div.className = 'result';
+    const before = escHtml(r.context.substring(0, r.matchStart));
+    const match = escHtml(r.context.substring(r.matchStart, r.matchEnd));
+    const after = escHtml(r.context.substring(r.matchEnd));
+    div.innerHTML = `<span class="file-name">${r.file}</span>` +
+      `<span class="time">${fmt(r.time)}</span>` +
+      `<span class="context">${before}<span class="match">${match}</span>${after}</span>`;
+    div.onclick = () => {
+      // Load the file if not current, then seek
+      if (currentFile !== r.file) {
+        const f = files.find(f => f.name === r.file);
+        if (f) selectFile(f);
+        // Wait for player to be ready, then seek
+        setTimeout(() => seekTo(r.time), 500);
+      } else {
+        seekTo(r.time);
+      }
+    };
+    el.appendChild(div);
+  }
+}
+
+// Tab switching
+function showTab(tab) {
+  document.querySelector('.tabs button:nth-child(1)').classList.toggle('active', tab === 'transcript');
+  document.querySelector('.tabs button:nth-child(2)').classList.toggle('active', tab === 'search');
+  document.getElementById('transcript').style.display = tab === 'transcript' ? '' : 'none';
+  document.getElementById('search-results').style.display = tab === 'search' ? '' : 'none';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Enter key triggers search
+document.getElementById('search-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+
+loadFiles();
+</script>
+</body>
+</html>
