@@ -90,7 +90,7 @@ body { font-family: -apple-system, 'SF Mono', 'Cascadia Code', monospace; backgr
 .transcript .loading { color: var(--fg2); padding: 20px; text-align: center; }
 
 /* Search results */
-.search-results { flex: 1; overflow-y: auto; padding: 6px 0; font-size: 12px; display: none; }
+.search-results { flex: 1; overflow-y: auto; padding: 6px 0; font-size: 12px; }
 .search-results .result { padding: 4px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
 .search-results .result:hover { background: var(--bg3); }
 .search-results .result .file-name { color: var(--green); font-size: 10px; margin-right: 6px; }
@@ -136,7 +136,7 @@ body.resizing-h { user-select: none; cursor: ew-resize; }
       <div class="transcript" id="transcript">
         <div class="loading">Select a recording to view transcript</div>
       </div>
-      <div class="search-results" id="search-results"></div>
+      <div class="search-results" id="search-results" style="display:none"></div>
     </div>
   </div>
 </div>
